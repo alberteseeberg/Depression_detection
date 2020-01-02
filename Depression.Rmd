@@ -1,0 +1,339 @@
+---
+title: "ClassifyingDepression"
+author: "Alberte Seeberg & Matilde Nesheim"
+date: "12/10/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+setwd("~/Desktop/Semester_1_kandidat/NLP/Exam/Data")
+Sys.setlocale(category = "LC_ALL", locale = "UTF-8")
+
+```
+
+```{r}
+#Load Packages
+library(pacman)
+library(stringr)
+library(tidyverse)
+library(lmerTest)
+library(Sentida)
+library(ngram)
+library(dplyr)
+library(yarrr)
+library(ggplot2)
+library(lme4)
+library(groupdata2)
+library(doParallel)
+library(cvms)
+library(e1071)
+library(caret)
+```
+
+```{r}
+#Load Data
+DepressedStories=read.csv("DepressedStories.csv")
+DepressedStories=DepressedStories[-1]
+
+HealthyStories=read.csv("HealthyStories.csv")
+HealthyStories=HealthyStories[-1]
+
+DepressedStories$text=as.character(DepressedStories$text)
+HealthyStories$text=as.character(HealthyStories$text)
+
+AllData=rbind(HealthyStories, DepressedStories)
+
+
+```
+
+###Data Processing
+
+```{r}
+#remove punctuation and make lower case for all letters
+DepressedStories$text=gsub('[[:punct:] ]+',' ',DepressedStories$text)
+DepressedStories$text=tolower(DepressedStories$text)
+
+#remove punctuation and make lower case for all letters
+HealthyStories$text=gsub('[[:punct:] ]+',' ',HealthyStories$text)
+HealthyStories$text=tolower(HealthyStories$text)
+
+#remove punctuation and make lower case for all letters
+AllData$text=gsub('[[:punct:] ]+',' ',AllData$text)
+AllData$text=tolower(AllData$text)
+
+
+#Adding sentiment score from Sentida to new column Sent
+
+AllData$Sent <- 0
+
+i = 1
+for(text in AllData$text){
+  AllData$Sent[i] <- sentida(text, output = 'mean')
+  i <- i +1
+}
+
+
+
+#adding a column with freq of jeg (I)
+AllData$jeg <- 0
+
+i = 1
+for(text in AllData$text){
+  AllData$jeg[i] <- str_count(text," jeg ")
+  i <- i +1
+}
+
+AllData$pronouns <- 0
+
+i = 1
+for(text in AllData$text){
+  AllData$pronouns[i] <- str_count(text," jeg ")+str_count(text," du ")+str_count(text," de ")+str_count(text," han ")+str_count(text," hun ")+str_count(text," hendes ")+str_count(text," hans ")+str_count(text," dem ")+str_count(text," den ")+str_count(text," det ")+str_count(text," os ")+str_count(text," jer ")+str_count(text," mig ")+str_count(text," dig ")+str_count(text," min ")+str_count(text," mine ")+str_count(text," vores ")+str_count(text," jeres ")+str_count(text," deres ")+str_count(text," ham ")+str_count(text," hende ")+str_count(text," dens ")+str_count(text," dets ")+str_count(text," mit ")+str_count(text," dit ")+str_count(text," din ")+str_count(text," dine ")+str_count(text," sin ")+str_count(text," sit ")+str_count(text," vor ")+str_count(text," sine ")+str_count(text," sig ")
+  i <- i +1
+}
+
+#making column with sum all words
+AllData$totalwords <- 0
+
+i = 1
+for(text in AllData$text){
+  AllData$totalwords[i] <- sapply(strsplit(text, " "), length)
+  i <- i +1
+}
+
+#Total words within each condition
+sum(AllData$totalwords[AllData$Diagnosis=="depression"])
+sum(AllData$totalwords[AllData$Diagnosis=="control"])
+
+#making column with pronouns percentage
+AllData$percentagepronouns = (AllData$pronouns/AllData$totalwords)*100
+
+#making column with jeg percentage
+AllData$percentagejeg = (AllData$jeg/AllData$totalwords)*100
+
+#making column with total mig
+AllData$mig <- 0
+
+i = 1
+for(text in AllData$text){
+  AllData$mig[i] <- str_count(text," mig ")
+  i <- i +1
+}
+
+#making column with total de
+AllData$de <- 0
+
+i = 1
+for(text in AllData$text){
+  AllData$de[i] <- str_count(text," de ")
+  i <- i +1
+}
+
+#making column with total vi
+AllData$vi <- 0
+
+i = 1
+for(text in AllData$text){
+  AllData$vi[i] <- str_count(text," vi ")
+  i <- i +1
+}
+
+#making column with mig percentage
+AllData$percentagemig = (AllData$mig/AllData$totalwords)*100
+
+#making column with vi percentage
+AllData$percentagevi = (AllData$vi/AllData$totalwords)*100
+
+#making column with de percentage
+AllData$percentagede = (AllData$de/AllData$totalwords)*100
+
+#making column with total ikke
+AllData$ikke <- 0
+
+i = 1
+for(text in AllData$text){
+  AllData$ikke[i] <- str_count(text," ikke ")
+  i <- i +1
+}
+
+#making column with ikke percentage
+AllData$percentageikke = (AllData$ikke/AllData$totalwords)*100
+
+
+#write.csv(AllData, file="AllData.csv")
+
+#loading data including results from topic modelling 
+#topic = the topic which the participant belongs to with the highest probability
+topicdata=read.csv("TotalTopicData.csv")
+topicdata=topicdata[-1]
+topicdata$text=as.character(topicdata$text)
+
+AllData$topic=topicdata$topic
+
+AllData$topic=as.factor(AllData$topic)
+
+```
+
+
+###Cross-validation
+
+```{r}
+
+doParallel::registerDoParallel(4) # Set how many cores to use in parallel
+set.seed(1)
+AllData <- AllData %>% 
+  fold(k=5, cat_col=("Diagnosis"),
+       id_col = "ID", 
+       num_fold_cols = 100, # up to 100 unique folds 
+       max_iters = 10, # When to stop trying to make new unique folds
+       parallel = TRUE)
+
+fold_column_names <- names(AllData)[grep(".folds_", names(AllData))]
+
+#Which models to cross-validate
+
+formulas <- paste0(
+  "Diagnosis ~ ",
+  c(
+    "percentagejeg + MeanWordLength + Sent",
+    "topic",
+    "percentagejeg",
+    "percentagevi",
+    "percentagemig",
+    "percentagede",
+    "percentageikke",
+    "percentagepronouns",
+    "MeanWordLength + Sent",
+    "topic + MeanWordLength + Sent",
+    "Sent",
+    "MeanWordLength",
+    "percentagejeg+percentagemig+percentagevi+percentagede+percentageikke",
+    "percentagejeg+percentagemig+percentagevi+percentagede+percentageikke + topic",
+    "percentagejeg+percentagemig+percentagevi+percentagede+percentageikke+MeanWordLength+Sent",
+   "percentagejeg+percentagemig+percentagevi+percentagede+percentageikke+ percentagepronouns+ topic + MeanWordLength+Sent",
+    "percentagejeg+percentagemig+percentagevi+percentagede+percentageikke+topic+ MeanWordLength+Sent",
+    "percentagejeg+percentagemig+percentagevi+percentagede+percentageikke+Sent",
+    "percentagejeg+percentagemig+percentagevi+percentagede+percentageikke+MeanWordLength",
+    "percentagevi + MeanWordLength + Sent",
+    "percentagemig + MeanWordLength + Sent",
+    "percentageikke + MeanWordLength + Sent",
+    "percentagepronouns + MeanWordLength + Sent",
+    "percentagepronouns + topic + MeanWordLength + Sent",
+    "percentagede + MeanWordLength + Sent"
+  ),
+  " + (1|ID)"
+)
+
+#cross validation
+cv <- cross_validate(AllData, 
+                     models = formulas,
+                     fold_cols = paste0(".folds_",1:99),
+                     family = "binomial",
+                     parallel = TRUE,
+                     control = lmerControl(optimizer = "nloptwrap", calc.derivs = FALSE)
+)
+
+
+#results from cross-validation with specific metrics
+results <- select_metrics(cv) %>% 
+  dplyr::select('F1', 'Sensitivity', 'Specificity','Pos Pred Value', 'Neg Pred Value', 'Fixed')
+
+#save results
+write.csv(results, file="CVresults.csv")
+
+
+#Best model
+BestModel = glmer(Diagnosis ~ MeanWordLength + Sent + (1|ID), data= AllData, family=binomial, control = glmerControl(optimizer = "nloptwrap", calc.derivs = FALSE))
+summary(BestModel)
+
+#Model including percentagepronouns
+PronounsModel = glmer(Diagnosis ~ percentagepronouns + MeanWordLength + Sent + (1|ID), data= AllData, family=binomial, control = glmerControl(optimizer = "nloptwrap", calc.derivs = FALSE))
+summary(PronounsModel)
+
+```
+
+###Plots
+
+```{r}
+
+#Pirate plot of sent scores based on diagnosis
+pirateplot(formula = Sent ~ Diagnosis, data = AllData, main = "Average sentiment scores based on diagnosis", xlab = "Diagnosis",ylab="Sent", ylim= c(0,1), theme=2, pal="info", avg.line.o=0.8, bar.f.o = .2, bean.b.o = .7, point.o = 0.3, point.pch = 1, back.col = "white")
+
+#Pirate plot of mean word length based on diagnosis
+pirateplot(formula = MeanWordLength ~ Diagnosis, data = AllData, main = "Averaged mean word length based on diagnosis", xlab = "Diagnosis",ylab="MWL", ylim= c(3.6,4.3), theme=2, pal="info", avg.line.o=0.8, bar.f.o = .2, bean.b.o = .7, point.o = 0.3, point.pch = 1, back.col = "white")
+
+#Pirate plot of percentage pronouns based on diagnosis
+pirateplot(formula = percentagepronouns ~ Diagnosis, data = AllData, main = "Averaged percentage of pronouns based on diagnosis", xlab = "Diagnosis",ylab="p_pronouns", ylim= c(11,22), theme=2, pal="info", avg.line.o=0.8, bar.f.o = .2, bean.b.o = .7, point.o = 0.3, point.pch = 1, back.col = "white")
+
+
+
+```
+
+
+### Classifier
+
+```{r}
+
+#Creating train set (70%) and test set (30%)
+set.seed(7267166)
+trainIndex=createDataPartition(AllData$Diagnosis, p=0.70)$Resample1
+train=AllData[trainIndex, ]
+test=AllData[-trainIndex, ]
+
+## check the balance
+print(table(train$Diagnosis))
+
+## Naïve Bayes Classifier using mean word leangth + sentiment score (following best model)
+NBclassifier=naiveBayes(Diagnosis~ MeanWordLength + Sent, data=train)
+print(NBclassifier)
+
+printALL=function(model){
+  trainPred=predict(model, newdata = train, type = "class")
+  trainTable=table(train$Diagnosis, trainPred)
+  testPred=predict(NBclassifier, newdata=test, type="class")
+  testTable=table(test$Diagnosis, testPred)
+  trainAcc=(trainTable[1,1]+trainTable[2,2])/sum(trainTable)
+  testAcc=(testTable[1,1]+testTable[2,2])/sum(testTable)
+  message("Contingency Table for Training Data")
+  print(trainTable)
+  message("Contingency Table for Test Data")
+  print(testTable)
+  message("Accuracy")
+  print(round(cbind(trainAccuracy=trainAcc, testAccuracy=testAcc),3))
+}
+printALL(NBclassifier)
+
+pred <- predict(NBclassifier, newdata = test)
+confusionMatrix(pred, test$Diagnosis)
+
+
+##### SVM Classifier
+
+
+#training data on different algorithms 
+trctrl <- trainControl(method = "repeatedcv", number = 10, repeats = 3)
+
+#factor
+train[["Diagnosis"]] = factor(train[["Diagnosis"]])
+
+
+#svm model 
+svm_Linear <- train(Diagnosis ~ MeanWordLength+Sent, data = train, method = "svmLinear",
+trControl=trctrl,
+preProcess = c("center", "scale"),
+tuneLength = 10)
+
+svm_Linear
+
+#predicting
+test_pred <- predict(svm_Linear, newdata = test)
+test_pred
+
+#checking accuracy
+confusionMatrix(table(test_pred, test$Diagnosis))
+
+
+```
