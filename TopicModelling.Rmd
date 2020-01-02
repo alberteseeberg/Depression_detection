@@ -1,0 +1,244 @@
+---
+title: "LSA_analysis"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load data and libraries
+
+```{r}
+library(pacman)
+p_load(tm,tidyverse,lsa,lda,topicmodels,slam,ggplot2,dplyr,tidytext)
+
+#Working directory
+setwd("~/Desktop/OneDrive/Cognitive_Science_Master/NLP/Exam")
+
+#Load data
+depstory = read.csv("DepressedStories.csv")
+alldata = read.csv("AllData.csv")
+
+```
+
+
+Cleaning data - 2.0
+```{r setup, include=FALSE}
+
+#cleaning a bit 
+alldata = alldata[-2] #removing extra ID column 
+alldata = plyr::rename(alldata,c("X" = "ID"))
+
+### DEPRESSION TOPIC MODELING #### 
+
+#remove punctuation and make lower case for all letters
+depstory$text=gsub('[[:punct:] ]+',' ',depstory$text)
+depstory$text=tolower(depstory$text)
+
+#remove punctuation 
+depstory <- removePunctuation(depstory$text)
+
+stopWords <- scan("~/Desktop/OneDrive/Cognitive_Science_Master/NLP/Exam/stopwordsAll.txt", what = "character",sep="\n")
+
+#removing stopwords
+depstory <- removeWords(depstory, stopWords)
+
+
+#### All data topic modeling ####
+
+#remove punctuation and make lower case for all letters
+alldata$text=gsub('[[:punct:] ]+',' ',alldata$text)
+alldata$text=tolower(alldata$text)
+
+#remove punctuation 
+alldata <- removePunctuation(alldata$text)
+
+stopWords <- scan("~/Desktop/OneDrive/Cognitive_Science_Master/NLP/Exam/stopwordsAll.txt", what = "character",sep="\n")
+
+#removing stopwords
+alldata <- removeWords(alldata, stopWords)
+
+
+```
+
+## Corpus DEPRESSION 
+
+```{r}
+
+# Second I need to make this into a "corpus": I take the vector of texts, and feed them to vectorsource() and to corpus() as per tutorial
+corpus <- VCorpus(VectorSource(as.vector(depstory)))
+
+# Third I make a document term matrix: the rows correspond to the documents, the columns to the terms
+dtm <- DocumentTermMatrix(corpus, 
+                          control = list(stemming = FALSE, 
+                                         minWordLength = 2, 
+                                         removeNumbers = TRUE, 
+                                         removePunctuation = TRUE))
+
+# Double check: the first number should be the number of texts, the second the number of unique words
+dim(dtm)
+summary(col_sums(dtm))
+
+# Fourth we need to only select words that occur across documents
+term_tfidf <- tapply(dtm$v/row_sums(dtm)[dtm$i], dtm$j, mean) * log2(nDocs(dtm)/col_sums(dtm > 0))
+summary(term_tfidf)
+dtm1 <- dtm[,term_tfidf >= median(term_tfidf)]
+dtm1 <- dtm1[row_sums(dtm1) > 0,]
+summary(col_sums(dtm1))
+dim(dtm1)
+ 
+# Then we calculate the topics. K indicates how many (10 is kinda arbitrary)
+ap_lda <- LDA(dtm1, k = 6, control = list(seed = 1234)) #This function returns an object containing the full details of the model fit, such as how words are associated with topics and how topics are associated with documents.
+
+# Visualizing the top words in each topic
+ap_topics <- tidy(ap_lda, matrix = "beta") #extracting the per-topic-per-word probabilities
+
+#INTERPRETATION: For each combination, the model computes the probability of that term being generated from that topic.
+#For example, the term ???abort??? has a  b= 3.546099e-03 probability of being generated from topic 1, but a b=1.208131e-148 probability of being generated from topic 2 (textmining.com)
+
+ap_top_terms <- ap_topics %>%
+  group_by(topic) %>%
+  top_n(6, beta) %>% 
+  ungroup() %>%
+  arrange(topic, -beta)
+
+ap_top_terms$name = ifelse(ap_top_terms$topic=="1","Topic 1",
+                              ifelse(ap_top_terms$topic=="2","Topic 2",
+                              ifelse(ap_top_terms$topic=="3","Topic 3",
+                              ifelse(ap_top_terms$topic=="4","Topic 4",
+                              ifelse(ap_top_terms$topic=="5","Topic 5",
+                              ifelse(ap_top_terms$topic=="6","Topic 6",
+                              'hello'))))))
+                              # ifelse(ap_top_terms$topic=="7","Topic 7",
+                              # ifelse(ap_top_terms$topic=="8","Topic 8",
+                              # ifelse(ap_top_terms$topic=="9","Topic 9",
+                              # ifelse(ap_top_terms$topic=="10","Topic 10",
+                                          #  "triangle")))))))))
+
+
+ap_top_terms %>% #visualise the top 10 terms that are most common within each topic
+  mutate(term = reorder(term, beta)) %>%
+  ggplot(aes(term, beta, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ name, scales = "free") +
+  labs(title="Visual Representation of the Most Occurring Words in Each Topic")+
+  coord_flip()
+
+#INTERPRETATION:
+#This visualization lets us understand the k topics that were extracted from the data. One important observation about the words in each topic is that some words, such as ?????hh???, are common within both topics. This is an advantage of topic modeling as opposed to ???hard clustering??? methods: topics used in natural language could have some overlap in terms of words.
+
+
+#Besides estimating each topic as a mixture of words, LDA also models each document as a mixture of topics. We can examine the per-document-per-topic probabilities, with the matrix = "gamma" argument to tidy().
+
+# Creating a table with the topic scores per each document
+ap_documents <- tidy(ap_lda, matrix = "gamma")
+#Each of these values is an estimated proportion of words from that document that are generated from that topic. For example, the model estimates that only about gamme=6.340113e-05 (some percentage) of the words in document 1 were generated from topic 1.
+
+TopicData=spread(ap_documents,topic,gamma)
+TopicData$document=as.numeric(TopicData$document)
+TopicData=TopicData[order(TopicData$document),]
+
+TopicData=plyr::rename(TopicData, c("1"="Topic1", "2"="Topic2","3"="Topic3", "4"="Topic4","5"="Topic5", "6"="Topic6"))
+TopicData$name=Docs$name
+write_csv(TopicData,"TopicData.csv")
+
+# Now one should merge this data to the table used for classification purposes so that these topic scores can be used for figuring out whether somebody has depression
+
+```
+
+## CORPUS AND TOPIC SCORES - ALL DATA
+```{r}
+## Corpus DEPRESSION 
+
+# Second I need to make this into a "corpus": I take the vector of texts, and feed them to vectorsource() and to corpus() as per tutorial
+corpus <- VCorpus(VectorSource(as.vector(alldata)))
+
+# Third I make a document term matrix: the rows correspond to the documents, the columns to the terms
+dtm <- DocumentTermMatrix(corpus, 
+                          control = list(stemming = FALSE, 
+                                         minWordLength = 2, 
+                                         removeNumbers = TRUE, 
+                                         removePunctuation = TRUE))
+
+# Double check: the first number should be the number of texts, the second the number of unique words
+dim(dtm)
+summary(col_sums(dtm))
+
+# Fourth we need to only select words that occur across documents
+term_tfidf <- tapply(dtm$v/row_sums(dtm)[dtm$i], dtm$j, mean) * log2(nDocs(dtm)/col_sums(dtm > 0))
+summary(term_tfidf)
+dtm1 <- dtm[,term_tfidf >= median(term_tfidf)]
+dtm1 <- dtm1[row_sums(dtm1) > 0,]
+
+summary(col_sums(dtm1))
+dim(dtm1)
+ 
+# Then we calculate the topics. K indicates how many (10 is kinda arbitrary)
+ap_lda <- LDA(dtm1, k = 10, control = list(seed = 1234)) #This function returns an object containing the full details of the model fit, such as how words are associated with topics and how topics are associated with documents.
+
+# Visualizing the top words in each topic
+ap_topics <- tidy(ap_lda, matrix = "beta") #extracting the per-topic-per-word probabilities
+
+#INTERPRETATION: For each combination, the model computes the probability of that term being generated from that topic.
+#For example, the term X has a  b= 3.546099e-03 probability of being generated from topic 1, but a b=1.208131e-148 probability of being generated from topic 2.
+
+ap_top_terms <- ap_topics %>%
+  group_by(topic) %>%
+  top_n(6, beta) %>% 
+  ungroup() %>%
+  arrange(topic, -beta)
+
+ap_top_terms$name = ifelse(ap_top_terms$topic=="1","Topic 1",
+                              ifelse(ap_top_terms$topic=="2","Topic 2",
+                              ifelse(ap_top_terms$topic=="3","Topic 3",
+                              ifelse(ap_top_terms$topic=="4","Topic 4",
+                              ifelse(ap_top_terms$topic=="5","Topic 5",
+                              ifelse(ap_top_terms$topic=="6","Topic 6",
+                              ifelse(ap_top_terms$topic=="7","Topic 7",
+                              ifelse(ap_top_terms$topic=="8","Topic 8",
+                              ifelse(ap_top_terms$topic=="9","Topic 9",
+                              ifelse(ap_top_terms$topic=="10","Topic 10",
+                                            "hello"))))))))))
+
+
+ap_top_terms %>% #visualise the top 10 terms that are most common within each topic
+  mutate(term = reorder(term, beta)) %>%
+  ggplot(aes(term, beta, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ name, scales = "free") +
+  labs(title="The Most Occurring Words in Each Topic")+
+  coord_flip()
+
+
+# Creating a table with the topic scores per each document
+ap_documents <- tidy(ap_lda, matrix = "gamma")
+#Each of these values is an estimated proportion of words from that document that are generated from that topic. For example, the model estimates that only about gamme=6.340113e-05 (some percentage) of the words in document 1 were generated from topic 1.
+
+# Calculating which document that belong to which topic with the highest probability. 
+# Displaying which 1 topic with highest probability pr. ID 
+gammaDF = as.data.frame(ap_lda@gamma)
+k <- 10
+names(gammaDF) <- c(1:k)
+
+toptopics <- as.data.frame(cbind(document = row.names(gammaDF), 
+  topic = apply(gammaDF,1,function(x) names(gammaDF)[which(x==max(x))])))
+
+toptopics = plyr::rename(toptopics,c("document"="ID"))
+
+
+#merging topic scores with rest of data  
+test = merge(alldata,toptopics, by="ID") #?
+#write.csv(test, "TotalTopicData.csv")
+
+View(alldata)
+
+View(df)
+
+df1 = read.csv("TotalTopicData.csv")
+df1 = df1[-1]
+
+
+
+```
+
