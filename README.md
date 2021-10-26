@@ -1,5 +1,5 @@
-# 🗣️ Can Linguistic Patterns Identify and Classify Depression?
-### Depression Detection through Various Linguistic Features in Danish
+## Can Linguistic Patterns Identify and Classify Depression?
+#### Depression Detection through Various Linguistic Features in Danish
 
 Programming language: *R*. 
 
