@@ -1,6 +1,8 @@
 # 🗣️ Can Linguistic Patterns Identify and Classify Depression?
 ### Depression Detection through Various Linguistic Features in Danish
 
+Programming language: *R*. 
+
 An examination of the linguistic patterns of Danish-speaking individuals suffering from Major Depressive Disorder, by comparing with healthy controls, in the context of an autobiographical interview. 
 
 **Results**<br>
@@ -14,13 +16,7 @@ Additionally, the Naïve Bayes and SVM achieved fairly high positive predictive
  
 The file called "Depression" include feature extraction, cross-validation, models, plots & classifiers. The file called "TopicModelling" include topic modelling. 
 
-### ✉️ Contact
-For further information feel free to connect with one of the authors Matilde Nesheim on [matildenesheim@hotmail.com](mailto:matildenesheim@hotmail.com?subject=[GitHub]%20depression-nlp) or on LinkedIn:
+____
 
-[<img align="left" alt="matildenesheim | LinkedIn" width="22px" src="https://cdn.jsdelivr.net/npm/simple-icons@v3/icons/linkedin.svg" />][linkedin]
-
-<br />
-
-</details>
-
-[linkedin]: https://www.linkedin.com/in/matildenesheim
+> For any questions or inquiries, feel free to reach out at abseeberg@clin.au.dk or through LinkedIn <a href="https://dk.linkedin.com/in/alberte-seeberg-044404191" target="blank"><img align="center" src="https://raw.githubusercontent.com/rahuldkjain/github-profile-readme-generator/master/src/images/icons/Social/linked-in-alt.svg" alt="alberte seeberg" height="15" width="20" /></a>
+</p>
